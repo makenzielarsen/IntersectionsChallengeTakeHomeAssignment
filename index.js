@@ -30,7 +30,7 @@ let phaseIdleTimer = 0;
 
 // Car system
 const carImage = new Image();
-carImage.src = "car1_spr.png";
+carImage.src = "resources/car1_spr.png";
 
 const carW = lw * 0.7;
 const carLen = lw * 1.5;
