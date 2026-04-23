@@ -20,7 +20,7 @@ const westX = roadLeft - lw * 0.5;
 const eastX = roadRight + lw * 0.5;
 
 // Timer
-const TOTAL_SECONDS = 60;
+const TOTAL_SECONDS = 20;
 const NUM_PHASES = 4;
 let currentPhase = 0;
 let secondsRemaining = TOTAL_SECONDS;
@@ -78,7 +78,7 @@ const TURN_INFO = {
 // Left turns: smooth quarter-circle arc through the intersection (CCW on screen).
 // The arc center is offset to the LEFT of the approach direction so that
 // simultaneous opposing left turns (e.g. NB + SB) curve around each other.
-const LEFT_ARC_R = 2 * lw;
+const LEFT_ARC_R = 3 * lw;
 const LEFT_TURN_ARC = {
     south_5: { // NB → west
         cx: nsX(5) - LEFT_ARC_R, cy: ewY(4) + LEFT_ARC_R,
@@ -116,7 +116,7 @@ const RIGHT_TURN_YIELD = {
 
 function isGreen(phase) {
     if (phase === null) return true;
-    return phase === currentPhase && secondsRemaining > 40;
+    return phase === currentPhase && secondsRemaining > 5;
 }
 
 function hasConflictingTraffic(car) {
@@ -147,6 +147,31 @@ function hasConflictingTraffic(car) {
         }
 
         if (inZone) return true;
+    }
+    return false;
+}
+
+function hasLeftTurnConflict(car) {
+    // Check for left-turn cars from either side of the same road
+    const sameRoad = (car.entrance === "south" || car.entrance === "north")
+        ? ["south", "north"]
+        : ["west", "east"];
+
+    for (const other of cars) {
+        if (other.type !== "left") continue;
+        if (!sameRoad.includes(other.entrance)) continue;
+        if (other.turned) continue;
+
+        // Actively turning on the arc
+        if (other.inArc) return true;
+
+        // Past the light and still in the intersection box
+        if (other.pastLight) {
+            if (other.x > roadLeft - carLen && other.x < roadRight + carLen &&
+                other.y > roadTop - carLen && other.y < roadBottom + carLen) {
+                return true;
+            }
+        }
     }
     return false;
 }
@@ -205,6 +230,14 @@ function spawnCar() {
         newCar.turnX = turnInfo.turnX;
         newCar.turnY = turnInfo.turnY;
         newCar.exitHeading = turnInfo.exitHeading;
+    }
+
+    // Right-turn cars must stop when adjacent straight or left-protected is active
+    if (laneDef.type === "right") {
+        newCar.straightPhase = { south: 1, north: 1, west: 3, east: 3 }[entrance];
+        newCar.leftPhase = { south: 0, north: 0, west: 2, east: 2 }[entrance];
+        newCar.stoppedAtLine = false;
+        newCar.rightWait = 0;
     }
 
     // Attach arc info for left-turn cars
@@ -276,10 +309,17 @@ function updateCars(elapsed) {
         for (let i = 0; i < group.length; i++) {
             const car = group[i];
 
-            // Right-turn cars yield to cross-traffic instead of checking a phase
-            const canGo = car.type === "right"
-                ? !hasConflictingTraffic(car)
-                : isGreen(car.phase);
+            // Determine whether this car can proceed
+            let canGo;
+            if (car.type === "right") {
+                if (car.stoppedAtLine) {
+                    canGo = !hasConflictingTraffic(car) && !hasLeftTurnConflict(car);
+                } else {
+                    canGo = false;
+                }
+            } else {
+                canGo = isGreen(car.phase);
+            }
 
             let newX = car.x + Math.cos(car.heading) * CAR_SPEED * elapsed;
             let newY = car.y + Math.sin(car.heading) * CAR_SPEED * elapsed;
@@ -332,6 +372,12 @@ function updateCars(elapsed) {
 
             car.x = newX;
             car.y = newY;
+
+            // Right-turn on red: count time stopped, then allow after 0.5s
+            if (car.type === "right" && !car.stoppedAtLine && !canGo) {
+                car.rightWait += elapsed;
+                if (car.rightWait >= 0.5) car.stoppedAtLine = true;
+            }
 
             // Left-turn: enter arc when reaching the entry point
             if (car.type === "left" && car.arcCX !== undefined && !car.inArc) {
@@ -397,8 +443,8 @@ function updateCars(elapsed) {
 // === Drawing ===
 
 function getActiveColor(seconds) {
-    if (seconds > 40) return "#22c55e";
-    if (seconds > 30) return "#eab308";
+    if (seconds > 5) return "#22c55e";
+    if (seconds > 3) return "#eab308";
     return "#ef4444";
 }
 
@@ -450,11 +496,13 @@ function drawIntersection() {
     floorContext.fillRect(roadLeft, 0, roadSize, height);
     floorContext.fillRect(0, roadTop, width, roadSize);
 
+    // Dashed lane dividers
     floorContext.strokeStyle = "#6b7280";
     floorContext.lineWidth = 2;
     floorContext.setLineDash([15, 10]);
 
     for (let i = 1; i < 8; i++) {
+        if (i === 4) continue; // center line drawn separately
         const x = roadLeft + i * lw;
         floorContext.beginPath();
         floorContext.moveTo(x, 0);
@@ -464,6 +512,7 @@ function drawIntersection() {
         floorContext.stroke();
     }
     for (let i = 1; i < 8; i++) {
+        if (i === 4) continue;
         const y = roadTop + i * lw;
         floorContext.beginPath();
         floorContext.moveTo(0, y);
@@ -473,6 +522,56 @@ function drawIntersection() {
         floorContext.stroke();
     }
     floorContext.setLineDash([]);
+
+    // Solid yellow center lines (between lanes 4 and 5)
+    floorContext.strokeStyle = "#eab308";
+    floorContext.lineWidth = 4;
+
+    const nsCenterX = roadLeft + 4 * lw;
+    floorContext.beginPath();
+    floorContext.moveTo(nsCenterX, 0);
+    floorContext.lineTo(nsCenterX, roadTop);
+    floorContext.moveTo(nsCenterX, roadBottom);
+    floorContext.lineTo(nsCenterX, height);
+    floorContext.stroke();
+
+    const ewCenterY = roadTop + 4 * lw;
+    floorContext.beginPath();
+    floorContext.moveTo(0, ewCenterY);
+    floorContext.lineTo(roadLeft, ewCenterY);
+    floorContext.moveTo(roadRight, ewCenterY);
+    floorContext.lineTo(width, ewCenterY);
+    floorContext.stroke();
+
+    // Crosswalks (continental style — thick white bars parallel to traffic)
+    const cwDepth = lw * 0.6;
+    const cwBarWidth = lw * 0.55;
+
+    floorContext.fillStyle = "#ffffff";
+
+    // North crosswalk (bars run N-S across the top edge of the intersection)
+    for (let i = 0; i < 8; i++) {
+        const x = roadLeft + i * lw + (lw - cwBarWidth) / 2;
+        floorContext.fillRect(x, roadTop, cwBarWidth, cwDepth);
+    }
+
+    // South crosswalk
+    for (let i = 0; i < 8; i++) {
+        const x = roadLeft + i * lw + (lw - cwBarWidth) / 2;
+        floorContext.fillRect(x, roadBottom - cwDepth, cwBarWidth, cwDepth);
+    }
+
+    // West crosswalk (bars run E-W across the left edge of the intersection)
+    for (let i = 0; i < 8; i++) {
+        const y = roadTop + i * lw + (lw - cwBarWidth) / 2;
+        floorContext.fillRect(roadLeft, y, cwDepth, cwBarWidth);
+    }
+
+    // East crosswalk
+    for (let i = 0; i < 8; i++) {
+        const y = roadTop + i * lw + (lw - cwBarWidth) / 2;
+        floorContext.fillRect(roadRight - cwDepth, y, cwDepth, cwBarWidth);
+    }
 
     drawLight(nsX(4), northY, lightRadius, 0);
     drawLight(nsX(3), northY, lightRadius, 1);
