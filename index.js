@@ -116,6 +116,14 @@ const RIGHT_TURN_YIELD = {
     east:  "north",
 };
 
+// Unprotected left turns yield to oncoming straight traffic.
+const LEFT_TURN_YIELD = {
+    south: "north",
+    north: "south",
+    west:  "east",
+    east:  "west",
+};
+
 function isGreen(phase) {
     if (phase === null) return true;
     return phase === currentPhase && secondsRemaining > 5;
@@ -174,6 +182,37 @@ function hasLeftTurnConflict(car) {
                 return true;
             }
         }
+    }
+    return false;
+}
+
+function hasOncomingStraightTraffic(car) {
+    const yieldTo = LEFT_TURN_YIELD[car.entrance];
+
+    for (const other of cars) {
+        if (other.entrance !== yieldTo) continue;
+        if (other.type !== "straight") continue;
+        if (other.turned) continue;
+
+        let inZone = false;
+        const look = carLen * 4;
+
+        switch (other.entrance) {
+            case "east":
+                inZone = other.x > westX && other.x < eastX + look;
+                break;
+            case "west":
+                inZone = other.x > westX - look && other.x < eastX;
+                break;
+            case "north":
+                inZone = other.y > northY - look && other.y < southY;
+                break;
+            case "south":
+                inZone = other.y > northY && other.y < southY + look;
+                break;
+        }
+
+        if (inZone) return true;
     }
     return false;
 }
@@ -280,6 +319,11 @@ function spawnCar() {
         newCar.rightWait = 0;
     }
 
+    // Left-turn cars track the adjacent straight phase for unprotected turns
+    if (laneDef.type === "left") {
+        newCar.straightPhase = { south: 1, north: 1, west: 3, east: 3 }[entrance];
+    }
+
     // Attach arc info for left-turn cars
     const arcInfo = LEFT_TURN_ARC[turnKey];
     if (arcInfo) {
@@ -357,6 +401,15 @@ function updateCars(elapsed) {
                 } else if (car.stoppedAtLine) {
                     canGo = !hasConflictingTraffic(car)
                         && !hasLeftTurnConflict(car);
+                } else {
+                    canGo = false;
+                }
+            } else if (car.type === "left") {
+                if (isGreen(car.phase)) {
+                    canGo = true;
+                } else if (isGreen(car.straightPhase)
+                    && !hasOncomingStraightTraffic(car)) {
+                    canGo = true;
                 } else {
                     canGo = false;
                 }
@@ -511,9 +564,20 @@ function getActiveColor(seconds) {
 function drawLight(x, y, radius, phase) {
     floorContext.beginPath();
     floorContext.arc(x, y, radius, 0, Math.PI * 2);
-    floorContext.fillStyle = phase === currentPhase
-        ? getActiveColor(secondsRemaining)
-        : "#ef4444";
+
+    let color;
+    if (phase === currentPhase) {
+        color = getActiveColor(secondsRemaining);
+    } else if (secondsRemaining > 5
+        && ((phase === 0 && currentPhase === 1)
+        || (phase === 2 && currentPhase === 3))) {
+        const blinkOn = Math.floor((lastTimestamp || 0) / 500) % 2 === 0;
+        color = blinkOn ? "#f97316" : "#44403c";
+    } else {
+        color = "#ef4444";
+    }
+
+    floorContext.fillStyle = color;
     floorContext.fill();
 }
 
