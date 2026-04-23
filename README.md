@@ -16,7 +16,6 @@ Step 3: Arrange lights into intersection pattern
 Step 4: Add cars moving through the intersection while a light is green. Cars arriving should be randomized.
 
 
-- Some traffic lights have sensors underneath the road to detect if there are cars waiting. Make your signal smart! For example, if there are no cars waiting, keep that light red. What if cars begin to arrive? How long do you keep the light red?
 - Add support for a "walk" button at each intersection. When the button is pressed, it should cause the intersection to become clear long enough for a person to walk through it.
 
 

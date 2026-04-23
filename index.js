@@ -26,6 +26,7 @@ const NUM_PHASES = 4;
 let currentPhase = 0;
 let secondsRemaining = TOTAL_SECONDS;
 let lastTimestamp = null;
+let phaseIdleTimer = 0;
 
 // Car system
 const carImage = new Image();
@@ -175,6 +176,44 @@ function hasLeftTurnConflict(car) {
         }
     }
     return false;
+}
+
+function hasCarsWaitingForPhase(phase) {
+    for (const car of cars) {
+        if (car.phase !== phase) continue;
+        if (car.turned || car.inArc || car.pastLight) continue;
+        return true;
+    }
+    return false;
+}
+
+function hasCarsUsingPhase(phase) {
+    for (const car of cars) {
+        if (car.phase !== phase) continue;
+        // Car is in the intersection (actively crossing)
+        if (car.pastLight && !car.turned) return true;
+        if (car.inArc) return true;
+        // Car is approaching and hasn't stopped (still heading to the light)
+        if (!car.pastLight && !car.turned) return true;
+    }
+    return false;
+}
+
+function advancePhase() {
+    // Try each subsequent phase; skip any with no waiting cars
+    for (let attempt = 0; attempt < NUM_PHASES; attempt++) {
+        const next = (currentPhase + 1 + attempt) % NUM_PHASES;
+        if (hasCarsWaitingForPhase(next)) {
+            currentPhase = next;
+            secondsRemaining = TOTAL_SECONDS;
+            phaseIdleTimer = 0;
+            return;
+        }
+    }
+    // No cars waiting anywhere — just advance normally
+    currentPhase = (currentPhase + 1) % NUM_PHASES;
+    secondsRemaining = TOTAL_SECONDS;
+    phaseIdleTimer = 0;
 }
 
 function spawnCar() {
@@ -622,8 +661,19 @@ function tick(timestamp) {
 
         secondsRemaining -= elapsed;
         if (secondsRemaining <= 0) {
-            currentPhase = (currentPhase + 1) % NUM_PHASES;
-            secondsRemaining = TOTAL_SECONDS;
+            advancePhase();
+        }
+
+        // Early phase change: if green and no cars using or approaching for 3s
+        if (secondsRemaining > 5) {
+            if (hasCarsUsingPhase(currentPhase)) {
+                phaseIdleTimer = 0;
+            } else {
+                phaseIdleTimer += elapsed;
+                if (phaseIdleTimer >= 3) {
+                    advancePhase();
+                }
+            }
         }
 
         spawnTimer += elapsed;
