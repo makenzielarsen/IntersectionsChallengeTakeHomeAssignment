@@ -413,10 +413,27 @@ function updateCars(elapsed) {
             car.x = newX;
             car.y = newY;
 
-            // Right-turn on red: count time stopped, then allow after 0.5s
+            // Right-turn: only count wait time once actually at the stop line
             if (car.type === "right" && !car.stoppedAtLine && !canGo) {
-                car.rightWait += elapsed;
-                if (car.rightWait >= 0.5) car.stoppedAtLine = true;
+                let atLine = false;
+                switch (entrance) {
+                    case "south":
+                        atLine = car.y <= southY + carLen / 2 + 4;
+                        break;
+                    case "north":
+                        atLine = car.y >= northY - carLen / 2 - 4;
+                        break;
+                    case "west":
+                        atLine = car.x >= westX - carLen / 2 - 4;
+                        break;
+                    case "east":
+                        atLine = car.x <= eastX + carLen / 2 + 4;
+                        break;
+                }
+                if (atLine) {
+                    car.rightWait += elapsed;
+                    if (car.rightWait >= 0.5) car.stoppedAtLine = true;
+                }
             }
 
             // Left-turn: enter arc when reaching the entry point

@@ -17,10 +17,11 @@ Step 4: Add cars moving through the intersection while a light is green. Cars ar
 
 Step 5: Edge cases
 
-Step 6: Pedestrian Support
+Step 6: Blinking Orange Light - Unprotected Left turns
 
-Step 7: Fixes
+Step 7: Pedestrian Support
 
+Step 8: Fixes
 
 
 - Add support for a "walk" button at each intersection. When the button is pressed, it should cause the intersection to become clear long enough for a person to walk through it.
