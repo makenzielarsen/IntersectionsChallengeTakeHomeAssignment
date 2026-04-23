@@ -15,6 +15,13 @@ Step 3: Arrange lights into intersection pattern
 
 Step 4: Add cars moving through the intersection while a light is green. Cars arriving should be randomized.
 
+Step 5: Edge cases
+
+Step 6: Pedestrian Support
+
+Step 7: Fixes
+
+
 
 - Add support for a "walk" button at each intersection. When the button is pressed, it should cause the intersection to become clear long enough for a person to walk through it.
 
