@@ -581,6 +581,42 @@ function drawLight(x, y, radius, phase) {
     floorContext.fill();
 }
 
+function drawPedestrianSymbol(cx, cy, size, color) {
+    floorContext.save();
+    floorContext.translate(cx, cy);
+    floorContext.strokeStyle = color;
+    floorContext.fillStyle = color;
+    floorContext.lineWidth = size * 0.1;
+    floorContext.lineCap = "round";
+
+    // Head
+    floorContext.beginPath();
+    floorContext.arc(0, -size * 0.32, size * 0.1, 0, Math.PI * 2);
+    floorContext.fill();
+
+    // Body
+    floorContext.beginPath();
+    floorContext.moveTo(0, -size * 0.22);
+    floorContext.lineTo(size * 0.03, size * 0.08);
+    floorContext.stroke();
+
+    // Arms (walking pose)
+    floorContext.beginPath();
+    floorContext.moveTo(-size * 0.15, size * 0.05);
+    floorContext.lineTo(0, -size * 0.1);
+    floorContext.lineTo(size * 0.15, -size * 0.02);
+    floorContext.stroke();
+
+    // Legs (walking stride)
+    floorContext.beginPath();
+    floorContext.moveTo(-size * 0.13, size * 0.38);
+    floorContext.lineTo(size * 0.03, size * 0.08);
+    floorContext.lineTo(size * 0.16, size * 0.38);
+    floorContext.stroke();
+
+    floorContext.restore();
+}
+
 function drawRightTurnArrow(cx, cy, size, rotation) {
     const r = size * 0.3;
     const straight = size * 0.35;
@@ -715,6 +751,20 @@ function drawIntersection() {
     drawRightTurnArrow(nsX(1), northY, arrowSize, Math.PI);
     drawRightTurnArrow(westX, ewY(8), arrowSize, Math.PI / 2);
     drawRightTurnArrow(eastX, ewY(1), arrowSize, 3 * Math.PI / 2);
+
+    // Pedestrian symbols at the four corners
+    // White during straight phases (1 or 3) while green — perpendicular
+    // crosswalk is safe. Dark during protected-left phases (0 or 2).
+    const pedSize = lw * 0.9;
+    const pedOffX = cwDepth + lw * 0.6;
+    const pedOffY = cwDepth + lw * 0.6;
+    const pedSafe = (currentPhase === 1 || currentPhase === 3)
+        && secondsRemaining > 5;
+    const pedColor = pedSafe ? "#ffffff" : "#44403c";
+    drawPedestrianSymbol(roadLeft - pedOffX, roadTop - pedOffY, pedSize, pedColor);
+    drawPedestrianSymbol(roadRight + pedOffX, roadTop - pedOffY, pedSize, pedColor);
+    drawPedestrianSymbol(roadLeft - pedOffX, roadBottom + pedOffY, pedSize, pedColor);
+    drawPedestrianSymbol(roadRight + pedOffX, roadBottom + pedOffY, pedSize, pedColor);
 }
 
 function drawCars() {
