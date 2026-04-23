@@ -25,6 +25,3 @@ Step 8: Fixes
 
 
 - Add support for a "walk" button at each intersection. When the button is pressed, it should cause the intersection to become clear long enough for a person to walk through it.
-
-
-- Cars turning right don't need to stop before turning when the straight lanes next to it are green? Cars still not coming to full stop on right turns.

@@ -352,8 +352,11 @@ function updateCars(elapsed) {
             // Determine whether this car can proceed
             let canGo;
             if (car.type === "right") {
-                if (car.stoppedAtLine) {
-                    canGo = !hasConflictingTraffic(car) && !hasLeftTurnConflict(car);
+                if (isGreen(car.straightPhase)) {
+                    canGo = true;
+                } else if (car.stoppedAtLine) {
+                    canGo = !hasConflictingTraffic(car)
+                        && !hasLeftTurnConflict(car);
                 } else {
                     canGo = false;
                 }
