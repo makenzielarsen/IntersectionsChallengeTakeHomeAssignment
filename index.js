@@ -20,6 +20,41 @@ const southY = roadBottom + cwDepth + lw * 0.5;
 const westX = roadLeft - cwDepth - lw * 0.5;
 const eastX = roadRight + cwDepth + lw * 0.5;
 
+// Pedestrian system
+const pedOff = cwDepth + lw * 0.6;
+const pedCenters = {
+    nw: { x: roadLeft - pedOff, y: roadTop - pedOff },
+    ne: { x: roadRight + pedOff, y: roadTop - pedOff },
+    sw: { x: roadLeft - pedOff, y: roadBottom + pedOff },
+    se: { x: roadRight + pedOff, y: roadBottom + pedOff },
+};
+const pedBtnRadius = lw * 0.28;
+const pedBtnOff = lw * 0.75;
+const pedButtons = [
+    // NW — right arrow crosses N-S road, down arrow crosses E-W road
+    { x: pedCenters.nw.x + pedBtnOff, y: pedCenters.nw.y,
+      angle: 0, crosswalk: "north" },
+    { x: pedCenters.nw.x, y: pedCenters.nw.y + pedBtnOff,
+      angle: Math.PI / 2, crosswalk: "west" },
+    // NE — left arrow crosses N-S road, down arrow crosses E-W road
+    { x: pedCenters.ne.x - pedBtnOff, y: pedCenters.ne.y,
+      angle: Math.PI, crosswalk: "north" },
+    { x: pedCenters.ne.x, y: pedCenters.ne.y + pedBtnOff,
+      angle: Math.PI / 2, crosswalk: "east" },
+    // SW — right arrow crosses N-S road, up arrow crosses E-W road
+    { x: pedCenters.sw.x + pedBtnOff, y: pedCenters.sw.y,
+      angle: 0, crosswalk: "south" },
+    { x: pedCenters.sw.x, y: pedCenters.sw.y - pedBtnOff,
+      angle: -Math.PI / 2, crosswalk: "west" },
+    // SE — left arrow crosses N-S road, up arrow crosses E-W road
+    { x: pedCenters.se.x - pedBtnOff, y: pedCenters.se.y,
+      angle: Math.PI, crosswalk: "south" },
+    { x: pedCenters.se.x, y: pedCenters.se.y - pedBtnOff,
+      angle: -Math.PI / 2, crosswalk: "east" },
+];
+const pedRequests = { north: false, south: false, west: false, east: false };
+let pedWasSafe = { north: false, south: false, west: false, east: false };
+
 // Timer
 const TOTAL_SECONDS = 20;
 const NUM_PHASES = 4;
@@ -124,6 +159,13 @@ const LEFT_TURN_YIELD = {
     east:  "west",
 };
 
+function isCrosswalkSafe(crosswalk) {
+    if (crosswalk === "north" || crosswalk === "south") {
+        return currentPhase === 3 && secondsRemaining > 5;
+    }
+    return currentPhase === 1 && secondsRemaining > 5;
+}
+
 function isGreen(phase) {
     if (phase === null) return true;
     return phase === currentPhase && secondsRemaining > 5;
@@ -217,7 +259,14 @@ function hasOncomingStraightTraffic(car) {
     return false;
 }
 
+function hasPedRequestForPhase(phase) {
+    if (phase === 1) return pedRequests.west || pedRequests.east;
+    if (phase === 3) return pedRequests.north || pedRequests.south;
+    return false;
+}
+
 function hasCarsWaitingForPhase(phase) {
+    if (hasPedRequestForPhase(phase)) return true;
     for (const car of cars) {
         if (car.phase !== phase) continue;
         if (car.turned || car.inArc || car.pastLight) continue;
@@ -617,6 +666,77 @@ function drawPedestrianSymbol(cx, cy, size, color) {
     floorContext.restore();
 }
 
+function drawPedButton(btn) {
+    const safe = isCrosswalkSafe(btn.crosswalk);
+
+    if (safe) {
+        const blinkOn = Math.floor((lastTimestamp || 0) / 500) % 2 === 0;
+        if (!blinkOn) return;
+
+        const size = pedBtnRadius * 2.2;
+        const shaft = size * 0.5;
+        const head = size * 0.4;
+
+        floorContext.save();
+        floorContext.translate(btn.x, btn.y);
+        floorContext.rotate(btn.angle);
+
+        floorContext.strokeStyle = "#ffffff";
+        floorContext.lineWidth = 3;
+        floorContext.lineCap = "round";
+        floorContext.beginPath();
+        floorContext.moveTo(-shaft, 0);
+        floorContext.lineTo(shaft, 0);
+        floorContext.stroke();
+
+        floorContext.fillStyle = "#ffffff";
+        floorContext.beginPath();
+        floorContext.moveTo(shaft + head, 0);
+        floorContext.lineTo(shaft - head * 0.15, -head);
+        floorContext.lineTo(shaft - head * 0.15, head);
+        floorContext.closePath();
+        floorContext.fill();
+
+        floorContext.restore();
+        return;
+    }
+
+    const active = pedRequests[btn.crosswalk];
+
+    floorContext.beginPath();
+    floorContext.arc(btn.x, btn.y, pedBtnRadius, 0, Math.PI * 2);
+    floorContext.fillStyle = active ? "#3b82f6" : "#374151";
+    floorContext.fill();
+    floorContext.strokeStyle = "#6b7280";
+    floorContext.lineWidth = 1.5;
+    floorContext.stroke();
+
+    const shaft = pedBtnRadius * 0.45;
+    const head = pedBtnRadius * 0.3;
+
+    floorContext.save();
+    floorContext.translate(btn.x, btn.y);
+    floorContext.rotate(btn.angle);
+
+    floorContext.strokeStyle = "#ffffff";
+    floorContext.lineWidth = 2;
+    floorContext.lineCap = "round";
+    floorContext.beginPath();
+    floorContext.moveTo(-shaft, 0);
+    floorContext.lineTo(shaft, 0);
+    floorContext.stroke();
+
+    floorContext.fillStyle = "#ffffff";
+    floorContext.beginPath();
+    floorContext.moveTo(shaft + head, 0);
+    floorContext.lineTo(shaft - head * 0.2, -head);
+    floorContext.lineTo(shaft - head * 0.2, head);
+    floorContext.closePath();
+    floorContext.fill();
+
+    floorContext.restore();
+}
+
 function drawRightTurnArrow(cx, cy, size, rotation) {
     const r = size * 0.3;
     const straight = size * 0.35;
@@ -752,19 +872,18 @@ function drawIntersection() {
     drawRightTurnArrow(westX, ewY(8), arrowSize, Math.PI / 2);
     drawRightTurnArrow(eastX, ewY(1), arrowSize, 3 * Math.PI / 2);
 
-    // Pedestrian symbols at the four corners
-    // White during straight phases (1 or 3) while green — perpendicular
-    // crosswalk is safe. Dark during protected-left phases (0 or 2).
+    // Pedestrian symbols and crossing buttons at the four corners
     const pedSize = lw * 0.9;
-    const pedOffX = cwDepth + lw * 0.6;
-    const pedOffY = cwDepth + lw * 0.6;
     const pedSafe = (currentPhase === 1 || currentPhase === 3)
         && secondsRemaining > 5;
     const pedColor = pedSafe ? "#ffffff" : "#44403c";
-    drawPedestrianSymbol(roadLeft - pedOffX, roadTop - pedOffY, pedSize, pedColor);
-    drawPedestrianSymbol(roadRight + pedOffX, roadTop - pedOffY, pedSize, pedColor);
-    drawPedestrianSymbol(roadLeft - pedOffX, roadBottom + pedOffY, pedSize, pedColor);
-    drawPedestrianSymbol(roadRight + pedOffX, roadBottom + pedOffY, pedSize, pedColor);
+    for (const key of Object.keys(pedCenters)) {
+        const c = pedCenters[key];
+        drawPedestrianSymbol(c.x, c.y, pedSize, pedColor);
+    }
+    for (const btn of pedButtons) {
+        drawPedButton(btn);
+    }
 }
 
 function drawCars() {
@@ -810,6 +929,13 @@ function tick(timestamp) {
             }
         }
 
+        // Clear pedestrian requests once their safe crossing window ends
+        for (const cw of ["north", "south", "west", "east"]) {
+            const safe = isCrosswalkSafe(cw);
+            if (pedWasSafe[cw] && !safe) pedRequests[cw] = false;
+            pedWasSafe[cw] = safe;
+        }
+
         spawnTimer += elapsed;
         if (spawnTimer >= nextSpawnAt) {
             spawnCar();
@@ -823,6 +949,34 @@ function tick(timestamp) {
     draw();
     requestAnimationFrame(tick);
 }
+
+function canvasCoords(e) {
+    const rect = floorCanvas.getBoundingClientRect();
+    return {
+        x: (e.clientX - rect.left) * (floorCanvas.width / rect.width),
+        y: (e.clientY - rect.top) * (floorCanvas.height / rect.height),
+    };
+}
+
+function hitButton(mx, my) {
+    for (const btn of pedButtons) {
+        const dx = mx - btn.x;
+        const dy = my - btn.y;
+        if (dx * dx + dy * dy <= pedBtnRadius * pedBtnRadius) return btn;
+    }
+    return null;
+}
+
+floorCanvas.addEventListener("click", (e) => {
+    const { x, y } = canvasCoords(e);
+    const btn = hitButton(x, y);
+    if (btn) pedRequests[btn.crosswalk] = !pedRequests[btn.crosswalk];
+});
+
+floorCanvas.addEventListener("mousemove", (e) => {
+    const { x, y } = canvasCoords(e);
+    floorCanvas.style.cursor = hitButton(x, y) ? "pointer" : "default";
+});
 
 draw();
 requestAnimationFrame(tick);
