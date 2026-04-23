@@ -1,0 +1,15 @@
+html {
+    background-color: green;
+    display: flex;
+}
+
+body {
+    height: 97vh;
+    width: 99vw;
+    background-color: darkgrey;
+}
+
+canvas {
+    height: 100%;
+    width: 100%;
+}

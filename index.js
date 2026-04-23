@@ -1,0 +1,545 @@
+const floorCanvas = document.getElementById("floorCanvas");
+const floorContext = floorCanvas.getContext("2d");
+
+floorCanvas.width = floorCanvas.offsetWidth;
+floorCanvas.height = floorCanvas.offsetHeight;
+
+// Layout (computed once — canvas size is fixed)
+const lw = Math.min(floorCanvas.width, floorCanvas.height) / 16;
+const roadSize = 8 * lw;
+const roadLeft = (floorCanvas.width - roadSize) / 2;
+const roadRight = (floorCanvas.width + roadSize) / 2;
+const roadTop = (floorCanvas.height - roadSize) / 2;
+const roadBottom = (floorCanvas.height + roadSize) / 2;
+const nsX = (lane) => roadLeft + (lane - 0.5) * lw;
+const ewY = (lane) => roadTop + (lane - 0.5) * lw;
+const lightRadius = lw * 0.35;
+const northY = roadTop - lw * 0.5;
+const southY = roadBottom + lw * 0.5;
+const westX = roadLeft - lw * 0.5;
+const eastX = roadRight + lw * 0.5;
+
+// Timer
+const TOTAL_SECONDS = 60;
+const NUM_PHASES = 4;
+let currentPhase = 0;
+let secondsRemaining = TOTAL_SECONDS;
+let lastTimestamp = null;
+
+// Car system
+const carImage = new Image();
+carImage.src = "car1_spr.png";
+
+const carW = lw * 0.7;
+const carLen = lw * 1.5;
+const CAR_SPEED = 120;
+const CAR_GAP = 6;
+const MAX_CARS = 40;
+
+const cars = [];
+let spawnTimer = 0;
+let nextSpawnAt = 1.0;
+
+const LANE_DEFS = {
+    south: [
+        { lane: 5, phase: 0, type: "left" },
+        { lane: 6, phase: 1, type: "straight" },
+        { lane: 7, phase: 1, type: "straight" },
+        { lane: 8, phase: null, type: "right" },
+    ],
+    north: [
+        { lane: 4, phase: 0, type: "left" },
+        { lane: 3, phase: 1, type: "straight" },
+        { lane: 2, phase: 1, type: "straight" },
+        { lane: 1, phase: null, type: "right" },
+    ],
+    west: [
+        { lane: 5, phase: 2, type: "left" },
+        { lane: 6, phase: 3, type: "straight" },
+        { lane: 7, phase: 3, type: "straight" },
+        { lane: 8, phase: null, type: "right" },
+    ],
+    east: [
+        { lane: 4, phase: 2, type: "left" },
+        { lane: 3, phase: 3, type: "straight" },
+        { lane: 2, phase: 3, type: "straight" },
+        { lane: 1, phase: null, type: "right" },
+    ],
+};
+
+// Right turns: sharp turn at the nearest corner of the intersection.
+const TURN_INFO = {
+    south_8: { turnX: nsX(8), turnY: ewY(8), exitHeading: 0 },
+    north_1: { turnX: nsX(1), turnY: ewY(1), exitHeading: Math.PI },
+    west_8:  { turnX: nsX(1), turnY: ewY(8), exitHeading: Math.PI / 2 },
+    east_1:  { turnX: nsX(8), turnY: ewY(1), exitHeading: -Math.PI / 2 },
+};
+
+// Left turns: smooth quarter-circle arc through the intersection (CCW on screen).
+// The arc center is offset to the LEFT of the approach direction so that
+// simultaneous opposing left turns (e.g. NB + SB) curve around each other.
+const LEFT_ARC_R = 2 * lw;
+const LEFT_TURN_ARC = {
+    south_5: { // NB → west
+        cx: nsX(5) - LEFT_ARC_R, cy: ewY(4) + LEFT_ARC_R,
+        startAngle: 0, endAngle: -Math.PI / 2,
+        exitHeading: Math.PI,
+    },
+    north_4: { // SB → east
+        cx: nsX(4) + LEFT_ARC_R, cy: ewY(5) - LEFT_ARC_R,
+        startAngle: Math.PI, endAngle: Math.PI / 2,
+        exitHeading: 0,
+    },
+    west_5: { // EB → north
+        cx: nsX(5) - LEFT_ARC_R, cy: ewY(5) - LEFT_ARC_R,
+        startAngle: Math.PI / 2, endAngle: 0,
+        exitHeading: -Math.PI / 2,
+    },
+    east_4: { // WB → south
+        cx: nsX(4) + LEFT_ARC_R, cy: ewY(4) + LEFT_ARC_R,
+        startAngle: 3 * Math.PI / 2, endAngle: Math.PI,
+        exitHeading: Math.PI / 2,
+    },
+};
+
+// Right-turn cars yield to traffic from the far side of the cross road.
+//   south yields to east entrance (WB traffic crossing their path)
+//   north yields to west entrance (EB traffic)
+//   west  yields to south entrance (NB traffic)
+//   east  yields to north entrance (SB traffic)
+const RIGHT_TURN_YIELD = {
+    south: "east",
+    north: "west",
+    west:  "south",
+    east:  "north",
+};
+
+function isGreen(phase) {
+    if (phase === null) return true;
+    return phase === currentPhase && secondsRemaining > 40;
+}
+
+function hasConflictingTraffic(car) {
+    const yieldTo = RIGHT_TURN_YIELD[car.entrance];
+
+    for (const other of cars) {
+        if (other.entrance !== yieldTo) continue;
+        if (other.turned) continue;
+
+        // Is this car in the intersection zone (between the two light lines)?
+        let inZone = false;
+        const approaching = isGreen(other.phase);
+        const look = approaching ? carLen * 4 : 0;
+
+        switch (other.entrance) {
+            case "east":
+                inZone = other.x > westX && other.x < eastX + look;
+                break;
+            case "west":
+                inZone = other.x > westX - look && other.x < eastX;
+                break;
+            case "north":
+                inZone = other.y > northY - look && other.y < southY;
+                break;
+            case "south":
+                inZone = other.y > northY && other.y < southY + look;
+                break;
+        }
+
+        if (inZone) return true;
+    }
+    return false;
+}
+
+function spawnCar() {
+    if (cars.length >= MAX_CARS) return;
+
+    const entrances = ["north", "south", "east", "west"];
+    const entrance = entrances[Math.floor(Math.random() * 4)];
+    const lanes = LANE_DEFS[entrance];
+    const laneDef = lanes[Math.floor(Math.random() * lanes.length)];
+
+    let x, y, heading;
+    switch (entrance) {
+        case "south":
+            x = nsX(laneDef.lane);
+            y = floorCanvas.height + carLen;
+            heading = -Math.PI / 2;
+            break;
+        case "north":
+            x = nsX(laneDef.lane);
+            y = -carLen;
+            heading = Math.PI / 2;
+            break;
+        case "west":
+            x = -carLen;
+            y = ewY(laneDef.lane);
+            heading = 0;
+            break;
+        case "east":
+            x = floorCanvas.width + carLen;
+            y = ewY(laneDef.lane);
+            heading = Math.PI;
+            break;
+    }
+
+    for (const other of cars) {
+        if (other.entrance !== entrance || other.lane !== laneDef.lane) continue;
+        if (Math.hypot(other.x - x, other.y - y) < carLen * 2.5) return;
+    }
+
+    const newCar = {
+        entrance,
+        lane: laneDef.lane,
+        phase: laneDef.phase,
+        type: laneDef.type,
+        x, y, heading,
+        pastLight: false,
+        turned: false,
+    };
+
+    // Attach sharp-turn info for right-turn cars
+    const turnKey = `${entrance}_${laneDef.lane}`;
+    const turnInfo = TURN_INFO[turnKey];
+    if (turnInfo) {
+        newCar.turnX = turnInfo.turnX;
+        newCar.turnY = turnInfo.turnY;
+        newCar.exitHeading = turnInfo.exitHeading;
+    }
+
+    // Attach arc info for left-turn cars
+    const arcInfo = LEFT_TURN_ARC[turnKey];
+    if (arcInfo) {
+        newCar.arcCX = arcInfo.cx;
+        newCar.arcCY = arcInfo.cy;
+        newCar.arcR = LEFT_ARC_R;
+        newCar.arcStart = arcInfo.startAngle;
+        newCar.arcEnd = arcInfo.endAngle;
+        newCar.arcExitHeading = arcInfo.exitHeading;
+        newCar.inArc = false;
+        newCar.arcAngle = null;
+    }
+
+    cars.push(newCar);
+}
+
+function updateCars(elapsed) {
+    // Move already-turned cars freely (they left their original lane)
+    for (const car of cars) {
+        if (car.turned) {
+            car.x += Math.cos(car.heading) * CAR_SPEED * elapsed;
+            car.y += Math.sin(car.heading) * CAR_SPEED * elapsed;
+            continue;
+        }
+        // Advance left-turn cars along their arc
+        if (car.inArc) {
+            car.arcAngle -= (CAR_SPEED / car.arcR) * elapsed;
+            if (car.arcAngle <= car.arcEnd) {
+                car.arcAngle = car.arcEnd;
+                car.x = car.arcCX + car.arcR * Math.cos(car.arcEnd);
+                car.y = car.arcCY + car.arcR * Math.sin(car.arcEnd);
+                car.heading = car.arcExitHeading;
+                car.turned = true;
+                car.inArc = false;
+            } else {
+                car.x = car.arcCX + car.arcR * Math.cos(car.arcAngle);
+                car.y = car.arcCY + car.arcR * Math.sin(car.arcAngle);
+                car.heading = car.arcAngle - Math.PI / 2;
+            }
+        }
+    }
+
+    // Group cars still approaching by entrance + lane (exclude turned and in-arc)
+    const groups = {};
+    for (const car of cars) {
+        if (car.turned || car.inArc) continue;
+        const key = `${car.entrance}_${car.lane}`;
+        if (!groups[key]) groups[key] = [];
+        groups[key].push(car);
+    }
+
+    for (const key of Object.keys(groups)) {
+        const group = groups[key];
+        const entrance = group[0].entrance;
+
+        // Sort: closest to intersection first
+        group.sort((a, b) => {
+            switch (entrance) {
+                case "south": return a.y - b.y;
+                case "north": return b.y - a.y;
+                case "west":  return b.x - a.x;
+                case "east":  return a.x - b.x;
+            }
+            return 0;
+        });
+
+        for (let i = 0; i < group.length; i++) {
+            const car = group[i];
+
+            // Right-turn cars yield to cross-traffic instead of checking a phase
+            const canGo = car.type === "right"
+                ? !hasConflictingTraffic(car)
+                : isGreen(car.phase);
+
+            let newX = car.x + Math.cos(car.heading) * CAR_SPEED * elapsed;
+            let newY = car.y + Math.sin(car.heading) * CAR_SPEED * elapsed;
+
+            // Stop at light / yield line if car can't go yet
+            if (!car.pastLight && !canGo) {
+                switch (entrance) {
+                    case "south": {
+                        const stop = southY + carLen / 2 + 3;
+                        if (car.y >= stop && newY < stop) newY = stop;
+                        break;
+                    }
+                    case "north": {
+                        const stop = northY - carLen / 2 - 3;
+                        if (car.y <= stop && newY > stop) newY = stop;
+                        break;
+                    }
+                    case "west": {
+                        const stop = westX - carLen / 2 - 3;
+                        if (car.x <= stop && newX > stop) newX = stop;
+                        break;
+                    }
+                    case "east": {
+                        const stop = eastX + carLen / 2 + 3;
+                        if (car.x >= stop && newX < stop) newX = stop;
+                        break;
+                    }
+                }
+            }
+
+            // Queue behind car ahead
+            if (i > 0) {
+                const ahead = group[i - 1];
+                const gap = carLen + CAR_GAP;
+                switch (entrance) {
+                    case "south":
+                        if (newY < ahead.y + gap) newY = ahead.y + gap;
+                        break;
+                    case "north":
+                        if (newY > ahead.y - gap) newY = ahead.y - gap;
+                        break;
+                    case "west":
+                        if (newX > ahead.x - gap) newX = ahead.x - gap;
+                        break;
+                    case "east":
+                        if (newX < ahead.x + gap) newX = ahead.x + gap;
+                        break;
+                }
+            }
+
+            car.x = newX;
+            car.y = newY;
+
+            // Left-turn: enter arc when reaching the entry point
+            if (car.type === "left" && car.arcCX !== undefined && !car.inArc) {
+                const entryX = car.arcCX + car.arcR * Math.cos(car.arcStart);
+                const entryY = car.arcCY + car.arcR * Math.sin(car.arcStart);
+                let shouldEnter = false;
+                switch (entrance) {
+                    case "south": shouldEnter = car.y <= entryY; break;
+                    case "north": shouldEnter = car.y >= entryY; break;
+                    case "west":  shouldEnter = car.x >= entryX; break;
+                    case "east":  shouldEnter = car.x <= entryX; break;
+                }
+                if (shouldEnter) {
+                    car.inArc = true;
+                    car.arcAngle = car.arcStart;
+                    car.x = entryX;
+                    car.y = entryY;
+                    car.pastLight = true;
+                }
+            }
+
+            // Right-turn: sharp turn at the turn point
+            if (car.turnX !== undefined && !car.turned) {
+                let shouldTurn = false;
+                switch (entrance) {
+                    case "south": shouldTurn = car.y <= car.turnY; break;
+                    case "north": shouldTurn = car.y >= car.turnY; break;
+                    case "west":  shouldTurn = car.x >= car.turnX; break;
+                    case "east":  shouldTurn = car.x <= car.turnX; break;
+                }
+                if (shouldTurn) {
+                    car.x = car.turnX;
+                    car.y = car.turnY;
+                    car.heading = car.exitHeading;
+                    car.turned = true;
+                    car.pastLight = true;
+                }
+            }
+
+            // Mark past light (committed to crossing — won't stop again)
+            if (!car.pastLight) {
+                switch (entrance) {
+                    case "south": if (car.y < southY) car.pastLight = true; break;
+                    case "north": if (car.y > northY) car.pastLight = true; break;
+                    case "west":  if (car.x > westX)  car.pastLight = true; break;
+                    case "east":  if (car.x < eastX)  car.pastLight = true; break;
+                }
+            }
+        }
+    }
+
+    // Remove off-screen cars
+    for (let i = cars.length - 1; i >= 0; i--) {
+        const car = cars[i];
+        const margin = carLen * 3;
+        if (car.x < -margin || car.x > floorCanvas.width + margin ||
+            car.y < -margin || car.y > floorCanvas.height + margin) {
+            cars.splice(i, 1);
+        }
+    }
+}
+
+// === Drawing ===
+
+function getActiveColor(seconds) {
+    if (seconds > 40) return "#22c55e";
+    if (seconds > 30) return "#eab308";
+    return "#ef4444";
+}
+
+function drawLight(x, y, radius, phase) {
+    floorContext.beginPath();
+    floorContext.arc(x, y, radius, 0, Math.PI * 2);
+    floorContext.fillStyle = phase === currentPhase
+        ? getActiveColor(secondsRemaining)
+        : "#ef4444";
+    floorContext.fill();
+}
+
+function drawRightTurnArrow(cx, cy, size, rotation) {
+    const r = size * 0.3;
+    const straight = size * 0.35;
+    const headSize = size * 0.18;
+
+    floorContext.save();
+    floorContext.translate(cx, cy);
+    floorContext.rotate(rotation);
+
+    floorContext.strokeStyle = "#d1d5db";
+    floorContext.lineWidth = 2;
+    floorContext.lineCap = "round";
+    floorContext.beginPath();
+    floorContext.moveTo(0, straight);
+    floorContext.lineTo(0, 0);
+    floorContext.arc(r, 0, r, Math.PI, 1.5 * Math.PI);
+    floorContext.stroke();
+
+    floorContext.fillStyle = "#d1d5db";
+    floorContext.beginPath();
+    floorContext.moveTo(r + headSize, -r);
+    floorContext.lineTo(r - headSize * 0.4, -r - headSize * 0.6);
+    floorContext.lineTo(r - headSize * 0.4, -r + headSize * 0.6);
+    floorContext.closePath();
+    floorContext.fill();
+
+    floorContext.restore();
+}
+
+function drawIntersection() {
+    const { width, height } = floorCanvas;
+
+    floorContext.fillStyle = "#111827";
+    floorContext.fillRect(0, 0, width, height);
+
+    floorContext.fillStyle = "#374151";
+    floorContext.fillRect(roadLeft, 0, roadSize, height);
+    floorContext.fillRect(0, roadTop, width, roadSize);
+
+    floorContext.strokeStyle = "#6b7280";
+    floorContext.lineWidth = 2;
+    floorContext.setLineDash([15, 10]);
+
+    for (let i = 1; i < 8; i++) {
+        const x = roadLeft + i * lw;
+        floorContext.beginPath();
+        floorContext.moveTo(x, 0);
+        floorContext.lineTo(x, roadTop);
+        floorContext.moveTo(x, roadBottom);
+        floorContext.lineTo(x, height);
+        floorContext.stroke();
+    }
+    for (let i = 1; i < 8; i++) {
+        const y = roadTop + i * lw;
+        floorContext.beginPath();
+        floorContext.moveTo(0, y);
+        floorContext.lineTo(roadLeft, y);
+        floorContext.moveTo(roadRight, y);
+        floorContext.lineTo(width, y);
+        floorContext.stroke();
+    }
+    floorContext.setLineDash([]);
+
+    drawLight(nsX(4), northY, lightRadius, 0);
+    drawLight(nsX(3), northY, lightRadius, 1);
+    drawLight(nsX(2), northY, lightRadius, 1);
+    drawLight(nsX(5), southY, lightRadius, 0);
+    drawLight(nsX(6), southY, lightRadius, 1);
+    drawLight(nsX(7), southY, lightRadius, 1);
+
+    drawLight(eastX, ewY(4), lightRadius, 2);
+    drawLight(eastX, ewY(3), lightRadius, 3);
+    drawLight(eastX, ewY(2), lightRadius, 3);
+    drawLight(westX, ewY(5), lightRadius, 2);
+    drawLight(westX, ewY(6), lightRadius, 3);
+    drawLight(westX, ewY(7), lightRadius, 3);
+
+    const arrowSize = lw * 0.8;
+    drawRightTurnArrow(nsX(8), southY, arrowSize, 0);
+    drawRightTurnArrow(nsX(1), northY, arrowSize, Math.PI);
+    drawRightTurnArrow(westX, ewY(8), arrowSize, Math.PI / 2);
+    drawRightTurnArrow(eastX, ewY(1), arrowSize, 3 * Math.PI / 2);
+}
+
+function drawCars() {
+    if (!carImage.complete) return;
+
+    for (const car of cars) {
+        floorContext.save();
+        floorContext.translate(car.x, car.y);
+        floorContext.rotate(car.heading + Math.PI);
+        floorContext.scale(1, -1);
+        floorContext.drawImage(
+            carImage,
+            -carLen / 2, -carW / 2,
+            carLen, carW
+        );
+        floorContext.restore();
+    }
+}
+
+function draw() {
+    drawIntersection();
+    drawCars();
+}
+
+function tick(timestamp) {
+    if (lastTimestamp !== null) {
+        const elapsed = (timestamp - lastTimestamp) / 1000;
+
+        secondsRemaining -= elapsed;
+        if (secondsRemaining <= 0) {
+            currentPhase = (currentPhase + 1) % NUM_PHASES;
+            secondsRemaining = TOTAL_SECONDS;
+        }
+
+        spawnTimer += elapsed;
+        if (spawnTimer >= nextSpawnAt) {
+            spawnCar();
+            spawnTimer = 0;
+            nextSpawnAt = 0.5 + Math.random() * 1.5;
+        }
+
+        updateCars(elapsed);
+    }
+    lastTimestamp = timestamp;
+    draw();
+    requestAnimationFrame(tick);
+}
+
+draw();
+requestAnimationFrame(tick);
