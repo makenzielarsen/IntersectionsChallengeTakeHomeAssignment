@@ -14,10 +14,11 @@ const roadBottom = (floorCanvas.height + roadSize) / 2;
 const nsX = (lane) => roadLeft + (lane - 0.5) * lw;
 const ewY = (lane) => roadTop + (lane - 0.5) * lw;
 const lightRadius = lw * 0.35;
-const northY = roadTop - lw * 0.5;
-const southY = roadBottom + lw * 0.5;
-const westX = roadLeft - lw * 0.5;
-const eastX = roadRight + lw * 0.5;
+const cwDepth = lw * 0.6;
+const northY = roadTop - cwDepth - lw * 0.5;
+const southY = roadBottom + cwDepth + lw * 0.5;
+const westX = roadLeft - cwDepth - lw * 0.5;
+const eastX = roadRight + cwDepth + lw * 0.5;
 
 // Timer
 const TOTAL_SECONDS = 20;
@@ -506,8 +507,8 @@ function drawIntersection() {
         const x = roadLeft + i * lw;
         floorContext.beginPath();
         floorContext.moveTo(x, 0);
-        floorContext.lineTo(x, roadTop);
-        floorContext.moveTo(x, roadBottom);
+        floorContext.lineTo(x, roadTop - cwDepth);
+        floorContext.moveTo(x, roadBottom + cwDepth);
         floorContext.lineTo(x, height);
         floorContext.stroke();
     }
@@ -516,8 +517,8 @@ function drawIntersection() {
         const y = roadTop + i * lw;
         floorContext.beginPath();
         floorContext.moveTo(0, y);
-        floorContext.lineTo(roadLeft, y);
-        floorContext.moveTo(roadRight, y);
+        floorContext.lineTo(roadLeft - cwDepth, y);
+        floorContext.moveTo(roadRight + cwDepth, y);
         floorContext.lineTo(width, y);
         floorContext.stroke();
     }
@@ -530,47 +531,46 @@ function drawIntersection() {
     const nsCenterX = roadLeft + 4 * lw;
     floorContext.beginPath();
     floorContext.moveTo(nsCenterX, 0);
-    floorContext.lineTo(nsCenterX, roadTop);
-    floorContext.moveTo(nsCenterX, roadBottom);
+    floorContext.lineTo(nsCenterX, roadTop - cwDepth);
+    floorContext.moveTo(nsCenterX, roadBottom + cwDepth);
     floorContext.lineTo(nsCenterX, height);
     floorContext.stroke();
 
     const ewCenterY = roadTop + 4 * lw;
     floorContext.beginPath();
     floorContext.moveTo(0, ewCenterY);
-    floorContext.lineTo(roadLeft, ewCenterY);
-    floorContext.moveTo(roadRight, ewCenterY);
+    floorContext.lineTo(roadLeft - cwDepth, ewCenterY);
+    floorContext.moveTo(roadRight + cwDepth, ewCenterY);
     floorContext.lineTo(width, ewCenterY);
     floorContext.stroke();
 
     // Crosswalks (continental style — thick white bars parallel to traffic)
-    const cwDepth = lw * 0.6;
     const cwBarWidth = lw * 0.55;
 
     floorContext.fillStyle = "#ffffff";
 
-    // North crosswalk (bars run N-S across the top edge of the intersection)
+    // North crosswalk (just above the intersection box, aligned with corner edges)
     for (let i = 0; i < 8; i++) {
         const x = roadLeft + i * lw + (lw - cwBarWidth) / 2;
-        floorContext.fillRect(x, roadTop, cwBarWidth, cwDepth);
+        floorContext.fillRect(x, roadTop - cwDepth, cwBarWidth, cwDepth);
     }
 
     // South crosswalk
     for (let i = 0; i < 8; i++) {
         const x = roadLeft + i * lw + (lw - cwBarWidth) / 2;
-        floorContext.fillRect(x, roadBottom - cwDepth, cwBarWidth, cwDepth);
+        floorContext.fillRect(x, roadBottom, cwBarWidth, cwDepth);
     }
 
-    // West crosswalk (bars run E-W across the left edge of the intersection)
+    // West crosswalk
     for (let i = 0; i < 8; i++) {
         const y = roadTop + i * lw + (lw - cwBarWidth) / 2;
-        floorContext.fillRect(roadLeft, y, cwDepth, cwBarWidth);
+        floorContext.fillRect(roadLeft - cwDepth, y, cwDepth, cwBarWidth);
     }
 
     // East crosswalk
     for (let i = 0; i < 8; i++) {
         const y = roadTop + i * lw + (lw - cwBarWidth) / 2;
-        floorContext.fillRect(roadRight - cwDepth, y, cwDepth, cwBarWidth);
+        floorContext.fillRect(roadRight, y, cwDepth, cwBarWidth);
     }
 
     drawLight(nsX(4), northY, lightRadius, 0);
