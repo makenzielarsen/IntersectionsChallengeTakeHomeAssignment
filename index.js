@@ -53,7 +53,16 @@ const pedButtons = [
       angle: -Math.PI / 2, crosswalk: "east" },
 ];
 const pedRequests = { north: false, south: false, west: false, east: false };
-let pedWasSafe = { north: false, south: false, west: false, east: false };
+
+const PED_WALK_FRAMES = [];
+for (let i = 1; i <= 6; i++) {
+    const img = new Image();
+    img.src = `resources/person_walk${i}.png`;
+    PED_WALK_FRAMES.push(img);
+}
+const PED_SPEED = 55;
+const PED_SIZE = lw * 1.1;
+const pedestrians = [];
 
 // Timer
 const TOTAL_SECONDS = 20;
@@ -158,6 +167,84 @@ const LEFT_TURN_YIELD = {
     west:  "east",
     east:  "west",
 };
+
+function spawnPedestrian(btn) {
+    const cw = btn.crosswalk;
+    let startX, startY, endX, endY, flipX;
+
+    if (cw === "north" || cw === "south") {
+        const cy = cw === "north"
+            ? roadTop - cwDepth / 2
+            : roadBottom + cwDepth / 2;
+        const goingRight = btn.angle === 0;
+        startX = goingRight ? roadLeft - PED_SIZE : roadRight + PED_SIZE;
+        endX = goingRight ? roadRight + PED_SIZE : roadLeft - PED_SIZE;
+        startY = cy;
+        endY = cy;
+        flipX = goingRight;
+    } else {
+        const cx = cw === "west"
+            ? roadLeft - cwDepth / 2
+            : roadRight + cwDepth / 2;
+        const goingDown = btn.angle === Math.PI / 2;
+        startY = goingDown ? roadTop - PED_SIZE : roadBottom + PED_SIZE;
+        endY = goingDown ? roadBottom + PED_SIZE : roadTop - PED_SIZE;
+        startX = cx;
+        endX = cx;
+        flipX = goingDown;
+    }
+
+    pedestrians.push({
+        crosswalk: cw,
+        x: startX, y: startY,
+        endX, endY,
+        flipX,
+        state: "waiting",
+        animTimer: 0,
+        frame: 0,
+    });
+    pedRequests[cw] = true;
+}
+
+function updatePedestrians(elapsed) {
+    for (let i = pedestrians.length - 1; i >= 0; i--) {
+        const ped = pedestrians[i];
+
+        if (ped.state === "waiting") {
+            if (isCrosswalkSafe(ped.crosswalk)) ped.state = "walking";
+            continue;
+        }
+
+        // Walking — advance position
+        const dx = ped.endX - ped.x;
+        const dy = ped.endY - ped.y;
+        const dist = Math.hypot(dx, dy);
+
+        if (dist < 2) {
+            pedestrians.splice(i, 1);
+            continue;
+        }
+
+        const step = PED_SPEED * elapsed;
+        ped.x += (dx / dist) * step;
+        ped.y += (dy / dist) * step;
+
+        // Cycle walk frames (frames index 2-5 = walk3-walk6)
+        ped.animTimer += elapsed;
+        if (ped.animTimer >= 0.12) {
+            ped.animTimer = 0;
+            ped.frame = (ped.frame + 1) % 4;
+        }
+    }
+
+    // Update pedRequests: keep active while any pedestrian needs that crosswalk
+    for (const cw of ["north", "south", "west", "east"]) {
+        const hasPed = pedestrians.some(
+            (p) => p.crosswalk === cw
+        );
+        if (!hasPed) pedRequests[cw] = false;
+    }
+}
 
 function isCrosswalkSafe(crosswalk) {
     if (crosswalk === "north" || crosswalk === "south") {
@@ -903,8 +990,27 @@ function drawCars() {
     }
 }
 
+function drawPedestrians() {
+    for (const ped of pedestrians) {
+        const frameIdx = ped.state === "waiting" ? 0 : 2 + ped.frame;
+        const img = PED_WALK_FRAMES[frameIdx];
+        if (!img.complete) continue;
+
+        floorContext.save();
+        floorContext.translate(ped.x, ped.y);
+        if (ped.flipX) floorContext.scale(-1, 1);
+        floorContext.drawImage(
+            img,
+            -PED_SIZE / 2, -PED_SIZE / 2,
+            PED_SIZE, PED_SIZE
+        );
+        floorContext.restore();
+    }
+}
+
 function draw() {
     drawIntersection();
+    drawPedestrians();
     drawCars();
 }
 
@@ -929,12 +1035,7 @@ function tick(timestamp) {
             }
         }
 
-        // Clear pedestrian requests once their safe crossing window ends
-        for (const cw of ["north", "south", "west", "east"]) {
-            const safe = isCrosswalkSafe(cw);
-            if (pedWasSafe[cw] && !safe) pedRequests[cw] = false;
-            pedWasSafe[cw] = safe;
-        }
+        updatePedestrians(elapsed);
 
         spawnTimer += elapsed;
         if (spawnTimer >= nextSpawnAt) {
@@ -970,7 +1071,7 @@ function hitButton(mx, my) {
 floorCanvas.addEventListener("click", (e) => {
     const { x, y } = canvasCoords(e);
     const btn = hitButton(x, y);
-    if (btn) pedRequests[btn.crosswalk] = !pedRequests[btn.crosswalk];
+    if (btn) spawnPedestrian(btn);
 });
 
 floorCanvas.addEventListener("mousemove", (e) => {
