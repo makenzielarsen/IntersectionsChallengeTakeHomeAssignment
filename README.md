@@ -24,6 +24,6 @@ Step 7: Pedestrian Support
 Step 8: Fixes
 
 
-- Add support for a "walk" button at each intersection. When the button is pressed, it should cause the intersection to become clear long enough for a person to walk through it.
+- when the pedestrian light is on do not turn left or right into one
 - make the right and left lanes have a sorter solid white line before the intersection
 - make the yellow lines a double yellow lines

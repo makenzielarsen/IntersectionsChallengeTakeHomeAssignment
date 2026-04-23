@@ -181,7 +181,7 @@ function spawnPedestrian(btn) {
         endX = goingRight ? roadRight + PED_SIZE : roadLeft - PED_SIZE;
         startY = cy;
         endY = cy;
-        flipX = goingRight;
+        flipX = !goingRight;
     } else {
         const cx = cw === "west"
             ? roadLeft - cwDepth / 2
@@ -191,7 +191,7 @@ function spawnPedestrian(btn) {
         endY = goingDown ? roadBottom + PED_SIZE : roadTop - PED_SIZE;
         startX = cx;
         endX = cx;
-        flipX = goingDown;
+        flipX = !goingDown;
     }
 
     pedestrians.push({
