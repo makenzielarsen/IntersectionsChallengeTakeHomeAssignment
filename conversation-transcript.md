@@ -388,3 +388,23 @@ Buttons are drawn as circles with arrows inside, turning blue when active. Click
 **User**: Make the solid yellow line between directions a double solid yellow line.
 
 **Claude**: Replaced the single 4px yellow center line with two parallel 2px yellow lines offset by 3px on each side of center, matching standard double-yellow road markings.
+
+---
+
+## 46. Update Traffic Patterns Skill and CLAUDE.md
+
+**User**: Update the traffic pattern skill and CLAUDE.md file with the changes seen in conversation transcript (specifically with changes we made in item 28 and above).
+
+**Claude**: Updated both `.claude/skills/traffic-patterns/SKILL.md` and `CLAUDE.md` to reflect all changes from items 28-45:
+
+**SKILL.md updates:**
+- Right turns: added green-straight exception, `rightWait` timer fix (increments only at stop line), pedestrian yielding via `hasPedestrianOnCrosswalk`, and `RIGHT_TURN_CROSSWALK` mapping
+- Left turns: renamed section to "protected + unprotected", added blinking orange unprotected behavior during adjacent straight phase, `hasOncomingStraightTraffic` check, yellow cutoff rule, and `LEFT_TURN_YIELD` mapping
+- Smart timing: updated to note pedestrian requests prevent phase skipping via `hasPedRequestForPhase`
+- New Pedestrian System section: visual elements (symbols, buttons), button layout per corner, `isCrosswalkSafe` logic, pedestrian sprites (6 frames, walking animation), safe crossing indicator (flashing white arrow), car/pedestrian interaction (mutual yielding), `CROSSWALK_RIGHT_TURN_SOURCE` mapping
+- New Road Markings section: solid/dashed lane boundaries, double solid yellow center line, crosswalk style
+
+**CLAUDE.md updates:**
+- Sprites path updated to `resources/` with both car and pedestrian sprites listed
+- Architecture: added pedestrian system bullet, updated draw loop description
+- Key conventions: updated right-turn and left-turn behavior descriptions, added `rightWait` timer note, added pedestrian spawn/yield conventions

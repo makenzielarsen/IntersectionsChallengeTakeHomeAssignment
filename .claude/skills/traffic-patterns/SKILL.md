@@ -90,22 +90,29 @@ Each entrance has 4 active lanes (the other 4 carry opposing outbound traffic):
 - **Red**: < 3 seconds remaining
 
 ### Smart timing
-- **Skip empty phases**: when transitioning, skip any phase with no waiting cars
+- **Skip empty phases**: when transitioning, skip any phase with no waiting cars AND no pedestrian requests for that phase
 - **Early cutoff**: if green and no cars have used the lanes for 3 seconds, advance early
+- **Pedestrian override** (`hasPedRequestForPhase`): phase 1 checks west/east pedestrian requests, phase 3 checks north/south — prevents skipping phases that pedestrians need
 
 ## Turn Mechanics
 
 ### Right turns
 - **Path**: sharp 90-degree turn at the nearest corner of the intersection box
-- **Always stop**: cars must come to a full stop (0.5s) before turning, regardless of light state
-- **Yield**: after stopping, check for cross-traffic (`hasConflictingTraffic`) AND left-turn cars on the same road (`hasLeftTurnConflict`) before proceeding
+- **Green straight exception**: if adjacent straight lanes are green (`isGreen(car.straightPhase)`), the car proceeds without stopping
+- **Otherwise always stop**: car must stop (0.5s via `rightWait` timer, incremented only after reaching the stop line) before turning
+- **Yield after stop**: check for cross-traffic (`hasConflictingTraffic`) AND left-turn cars on the same road (`hasLeftTurnConflict`) before proceeding
+- **Yield to pedestrians**: highest priority — if a pedestrian is walking on the exit crosswalk (`hasPedestrianOnCrosswalk`), the car will not go regardless of light state
 - **Yield direction**: south/north right-turners yield to east/west traffic; west/east right-turners yield to south/north traffic
+- **Crosswalk mapping** (`RIGHT_TURN_CROSSWALK`): south→east, north→west, west→south, east→north
 
-### Left turns (protected)
+### Left turns (protected + unprotected)
 - **Path**: smooth quarter-circle arc (radius = 3 lane widths) through the intersection
 - **Arc direction**: counterclockwise on screen (left turn)
 - **Arc center**: offset to the left of approach direction so opposing left turns curve around each other without colliding
-- **Only move on green**: controlled by their phase (0 or 2)
+- **Protected phase**: moves on green during own phase (0 or 2)
+- **Unprotected (blinking orange)**: during the adjacent straight phase (phase 1 for N/S lefts, phase 3 for E/W lefts), the left-turn light blinks orange (500ms on/off). Cars may turn if no oncoming straight traffic (`hasOncomingStraightTraffic` checks the opposing entrance via `LEFT_TURN_YIELD`)
+- **Yellow cutoff**: when the straight phase enters yellow (≤5s remaining), the blinking orange becomes solid red — cars that haven't passed the light must stop
+- **Yield mapping** (`LEFT_TURN_YIELD`): south→north, north→south, west→east, east→west
 
 ### Straight
 - **Path**: straight line through the intersection
@@ -121,6 +128,49 @@ Each entrance has 4 active lanes (the other 4 carry opposing outbound traffic):
 6. **Turn** at the designated point (arc for left, sharp for right, straight through for straight)
 7. **Exit** off the opposite edge of the canvas
 8. **Removed** when fully off-screen
+
+## Pedestrian System
+
+### Visual elements
+- **Pedestrian symbols**: stick figures at each of the 4 corners, positioned just outside the crosswalk boundaries in the corner squares
+- **Symbol color**: white when safe to cross (straight phase green), dark grey (`#44403c`) otherwise
+- **Arrow buttons**: 2 per corner (8 total), each pointing toward the crosswalk it activates. Clicking toggles a `pedRequests` entry
+
+### Button layout (per corner)
+| Corner | Button 1 | Button 2 |
+|--------|----------|----------|
+| NW | Right arrow → north crosswalk | Down arrow → west crosswalk |
+| NE | Left arrow → north crosswalk | Down arrow → east crosswalk |
+| SW | Right arrow → south crosswalk | Up arrow → west crosswalk |
+| SE | Left arrow → south crosswalk | Up arrow → east crosswalk |
+
+### Crosswalk safety (`isCrosswalkSafe`)
+- **North/south crosswalks**: safe during phase 3 (E/W straight) while green (>5s remaining)
+- **West/east crosswalks**: safe during phase 1 (N/S straight) while green (>5s remaining)
+
+### Pedestrian sprites
+- 6 frames in `resources/person_walk1-6.png` (frames 1-2 idle, 3-6 walking)
+- Clicking a button spawns a pedestrian at the corner edge of the crosswalk in "waiting" state (frame 1)
+- When `isCrosswalkSafe` AND no right-turn car in the crosswalk (`hasRightTurnCarInCrosswalk`), pedestrian starts walking at 55px/s, cycling frames 3-6 at ~8fps
+- Sprite flipped horizontally based on walking direction (faces direction of travel)
+- Removed when reaching the far side
+- `pedRequests` cleared per-crosswalk only when no pedestrians remain on that crosswalk
+
+### Safe crossing indicator
+- When crosswalk is safe, active button becomes a large flashing white arrow (2.2x size, 500ms blink)
+- When not safe, renders as a normal circle button (blue when active)
+
+### Car/pedestrian interaction
+- **Cars yield to pedestrians**: right-turn `canGo` checks `hasPedestrianOnCrosswalk` as highest priority
+- **Pedestrians yield to cars**: pedestrians in "waiting" state check `hasRightTurnCarInCrosswalk` before starting to walk
+- **Crosswalk mapping** (`CROSSWALK_RIGHT_TURN_SOURCE`): east→south, west→north, south→west, north→east (which entrance's right-turn cars cross each crosswalk)
+
+## Road Markings
+
+- **Lane dividers**: dashed white lines between lanes within each direction
+- **Solid lane markers**: at turn/straight boundaries (dividers 1, 3, 5, 7) — inner half (intersection to midpoint) is solid, outer half (midpoint to canvas edge) is dashed
+- **Center line**: double solid yellow between lanes 4 and 5 on both roads (two 2px lines offset 3px from center)
+- **Crosswalks**: continental style (8 thick white bars per crosswalk), positioned outside the intersection box in the approach strips
 
 ## Key Positions
 
