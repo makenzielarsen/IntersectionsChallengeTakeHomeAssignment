@@ -923,52 +923,104 @@ function drawIntersection() {
     floorContext.fillRect(roadLeft, 0, roadSize, height);
     floorContext.fillRect(0, roadTop, width, roadSize);
 
-    // Dashed lane dividers
+    // Lane dividers — turn/straight boundaries (i=1,3,5,7) are solid
+    // for the inner half nearest the intersection, dashed for the outer half.
     floorContext.strokeStyle = "#6b7280";
     floorContext.lineWidth = 2;
-    floorContext.setLineDash([15, 10]);
+
+    const nsMidTop = (roadTop - cwDepth) / 2;
+    const nsMidBot = (roadBottom + cwDepth + height) / 2;
+    const ewMidLeft = (roadLeft - cwDepth) / 2;
+    const ewMidRight = (roadRight + cwDepth + width) / 2;
+    const turnBoundary = new Set([1, 3, 5, 7]);
 
     for (let i = 1; i < 8; i++) {
-        if (i === 4) continue; // center line drawn separately
+        if (i === 4) continue;
         const x = roadLeft + i * lw;
-        floorContext.beginPath();
-        floorContext.moveTo(x, 0);
-        floorContext.lineTo(x, roadTop - cwDepth);
-        floorContext.moveTo(x, roadBottom + cwDepth);
-        floorContext.lineTo(x, height);
-        floorContext.stroke();
+
+        if (turnBoundary.has(i)) {
+            floorContext.setLineDash([]);
+            floorContext.beginPath();
+            floorContext.moveTo(x, nsMidTop);
+            floorContext.lineTo(x, roadTop - cwDepth);
+            floorContext.moveTo(x, roadBottom + cwDepth);
+            floorContext.lineTo(x, nsMidBot);
+            floorContext.stroke();
+
+            floorContext.setLineDash([15, 10]);
+            floorContext.beginPath();
+            floorContext.moveTo(x, 0);
+            floorContext.lineTo(x, nsMidTop);
+            floorContext.moveTo(x, nsMidBot);
+            floorContext.lineTo(x, height);
+            floorContext.stroke();
+        } else {
+            floorContext.setLineDash([15, 10]);
+            floorContext.beginPath();
+            floorContext.moveTo(x, 0);
+            floorContext.lineTo(x, roadTop - cwDepth);
+            floorContext.moveTo(x, roadBottom + cwDepth);
+            floorContext.lineTo(x, height);
+            floorContext.stroke();
+        }
     }
+
     for (let i = 1; i < 8; i++) {
         if (i === 4) continue;
         const y = roadTop + i * lw;
-        floorContext.beginPath();
-        floorContext.moveTo(0, y);
-        floorContext.lineTo(roadLeft - cwDepth, y);
-        floorContext.moveTo(roadRight + cwDepth, y);
-        floorContext.lineTo(width, y);
-        floorContext.stroke();
+
+        if (turnBoundary.has(i)) {
+            floorContext.setLineDash([]);
+            floorContext.beginPath();
+            floorContext.moveTo(ewMidLeft, y);
+            floorContext.lineTo(roadLeft - cwDepth, y);
+            floorContext.moveTo(roadRight + cwDepth, y);
+            floorContext.lineTo(ewMidRight, y);
+            floorContext.stroke();
+
+            floorContext.setLineDash([15, 10]);
+            floorContext.beginPath();
+            floorContext.moveTo(0, y);
+            floorContext.lineTo(ewMidLeft, y);
+            floorContext.moveTo(ewMidRight, y);
+            floorContext.lineTo(width, y);
+            floorContext.stroke();
+        } else {
+            floorContext.setLineDash([15, 10]);
+            floorContext.beginPath();
+            floorContext.moveTo(0, y);
+            floorContext.lineTo(roadLeft - cwDepth, y);
+            floorContext.moveTo(roadRight + cwDepth, y);
+            floorContext.lineTo(width, y);
+            floorContext.stroke();
+        }
     }
     floorContext.setLineDash([]);
 
-    // Solid yellow center lines (between lanes 4 and 5)
+    // Double solid yellow center lines (between lanes 4 and 5)
     floorContext.strokeStyle = "#eab308";
-    floorContext.lineWidth = 4;
+    floorContext.lineWidth = 2;
+    const lineGap = 3;
 
     const nsCenterX = roadLeft + 4 * lw;
-    floorContext.beginPath();
-    floorContext.moveTo(nsCenterX, 0);
-    floorContext.lineTo(nsCenterX, roadTop - cwDepth);
-    floorContext.moveTo(nsCenterX, roadBottom + cwDepth);
-    floorContext.lineTo(nsCenterX, height);
-    floorContext.stroke();
+    for (const offset of [-lineGap, lineGap]) {
+        floorContext.beginPath();
+        floorContext.moveTo(nsCenterX + offset, 0);
+        floorContext.lineTo(nsCenterX + offset, roadTop - cwDepth);
+        floorContext.moveTo(nsCenterX + offset, roadBottom + cwDepth);
+        floorContext.lineTo(nsCenterX + offset, height);
+        floorContext.stroke();
+    }
 
     const ewCenterY = roadTop + 4 * lw;
-    floorContext.beginPath();
-    floorContext.moveTo(0, ewCenterY);
-    floorContext.lineTo(roadLeft - cwDepth, ewCenterY);
-    floorContext.moveTo(roadRight + cwDepth, ewCenterY);
-    floorContext.lineTo(width, ewCenterY);
-    floorContext.stroke();
+    for (const offset of [-lineGap, lineGap]) {
+        floorContext.beginPath();
+        floorContext.moveTo(0, ewCenterY + offset);
+        floorContext.lineTo(roadLeft - cwDepth, ewCenterY + offset);
+        floorContext.moveTo(roadRight + cwDepth, ewCenterY + offset);
+        floorContext.lineTo(width, ewCenterY + offset);
+        floorContext.stroke();
+    }
 
     // Crosswalks (continental style — thick white bars parallel to traffic)
     const cwBarWidth = lw * 0.55;
