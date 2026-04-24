@@ -228,3 +228,163 @@
 **User**: Create a minimal CLAUDE.md for further development.
 
 **Claude**: Created `CLAUDE.md` with stack info (vanilla JS, no build tools), architecture overview (layout constants, timer, car system, draw loop), how to run, and key conventions (sprite orientation, state flags, layout constants).
+
+---
+
+## 28. Fix Right Turn Cars Not Stopping
+
+**User**: Cars trying to turn right are supposed to always come to a stop before checking for oncoming traffic. They appear to be turning right without stopping.
+
+**Claude**: Found the bug: the `rightWait` timer was incrementing from the moment the car spawned (since `canGo` was always `false` initially). By the time the car traveled from the canvas edge to the stop line, 0.5s had already elapsed, so `stoppedAtLine` was already `true`. Fixed by only incrementing `rightWait` once the car has actually reached the stop line position.
+
+---
+
+## 29. Right Turn Without Stopping on Green Straight
+
+**User**: Make an exception: cars can turn right without stopping if the straight lanes next to them have green lights. This does NOT include protected left lanes — only the straight lanes.
+
+**Claude**: Added a check for `isGreen(car.straightPhase)` as the first condition in the right-turn `canGo` logic. When adjacent straight lanes are green, the car proceeds freely. When they're not (protected left or cross-road phases), the car must stop and yield as before.
+
+---
+
+## 30. Unprotected Left Turn — Blinking Orange Light
+
+**User**: Add a blinking orange light for protected left lanes. When the straight lanes next to it turn green, the left-turn light should blink orange, indicating drivers may turn left if no oncoming cars.
+
+**Claude**: Added four pieces:
+1. `LEFT_TURN_YIELD` mapping (each entrance yields to its opposing entrance)
+2. `hasOncomingStraightTraffic()` function to check for oncoming straight cars
+3. `straightPhase` stored on left-turn cars; `canGo` updated to allow unprotected left turns during the adjacent straight phase when no oncoming traffic
+4. `drawLight` updated to show blinking orange (500ms on/off) for phase 0 during phase 1 and phase 2 during phase 3
+
+---
+
+## 31. Stop Unprotected Left on Yellow
+
+**User**: If the left light is blinking orange and the straight lanes turn yellow, cars trying to turn left should stop before entering the intersection.
+
+**Claude**: Changed the unprotected left `canGo` condition from `currentPhase === car.straightPhase` to `isGreen(car.straightPhase)`, which requires `secondsRemaining > 5`. Cars already past the light continue through.
+
+---
+
+## 32. Blinking Orange to Red on Yellow
+
+**User**: Just change the orange blinking light to red when the straight lanes turn yellow.
+
+**Claude**: Added `secondsRemaining > 5` to the blinking orange condition in `drawLight`. Once the straight phase hits yellow, the condition falls through to the `else` branch showing solid red.
+
+---
+
+## 33. Move Car Sprite to Resources Folder
+
+**User**: Move the car sprite PNG into a folder named resources.
+
+**Claude**: Created `resources/` directory, moved `car1_spr.png` into it, and updated the image path in `index.js` to `resources/car1_spr.png`.
+
+---
+
+## 34. Add Pedestrian Symbols at Corners
+
+**User**: Add a pedestrian symbol near the corners of the intersection cross.
+
+**Claude**: Added `drawPedestrianSymbol()` function that draws a walking stick figure (head, body, arms, legs in walking pose). Placed one at each of the 4 corners, positioned just outside the crosswalk boundaries in the corner squares.
+
+---
+
+## 35. Pedestrian Symbol Color Based on Safety
+
+**User**: Make the pedestrian symbol dark grey by default, turning white when safe to cross.
+
+**Claude**: Added a `color` parameter to `drawPedestrianSymbol`. Symbols turn white during straight phases (1 or 3) while green (`secondsRemaining > 5`), dark grey (`#44403c`) otherwise. During protected-left phases, left-turners sweep across crosswalks so symbols stay dark.
+
+---
+
+## 36. Add Pedestrian Crossing Arrow Buttons
+
+**User**: Add arrow buttons near each pedestrian symbol. Clicking indicates the user wants to walk across the road the arrow points toward. Two buttons per symbol.
+
+**Claude**: Added 8 arrow buttons (2 per corner), each pointing toward the crosswalk it activates:
+- NW: right (north crosswalk) + down (west crosswalk)
+- NE: left (north crosswalk) + down (east crosswalk)
+- SW: right (south crosswalk) + up (west crosswalk)
+- SE: left (south crosswalk) + up (east crosswalk)
+
+Buttons are drawn as circles with arrows inside, turning blue when active. Click handler toggles `pedRequests` state. Cursor changes to pointer on hover. Canvas coordinates properly scaled for CSS sizing.
+
+---
+
+## 37. Flashing White Arrow When Safe to Cross
+
+**User**: When safe to cross, turn the pedRequest button into a large flashing white arrow.
+
+**Claude**: Added `isCrosswalkSafe()` function with per-crosswalk safety (north/south safe during phase 3 green, west/east safe during phase 1 green). `drawPedButton` now shows a large flashing white arrow (2.2x normal size, 500ms blink) when the crosswalk is safe, replacing the normal button. When not safe, renders as before.
+
+---
+
+## 38. Clear Pedestrian Request After Safe Cycle
+
+**User**: Clear the pedRequest once a crossing cycle passes.
+
+**Claude**: Added `pedWasSafe` edge detection. Each frame, tracks whether each crosswalk was safe. When a crosswalk transitions from safe to not-safe (green→yellow), the corresponding `pedRequests` entry is cleared.
+
+---
+
+## 39. Don't Skip Phases with Pedestrian Requests
+
+**User**: The smart light system should not skip a phase if a pedestrian has requested crossing in that direction.
+
+**Claude**: Added `hasPedRequestForPhase()` — phase 1 checks west/east requests, phase 3 checks north/south requests. `hasCarsWaitingForPhase` now returns `true` when a pedestrian request exists for that phase, preventing the smart timing from skipping it.
+
+---
+
+## 40. Animated Pedestrian Sprites
+
+**User**: Placed pedestrian walking PNGs in resources folder. When user clicks the button, render the first PNG. When safe to cross, animate the pedestrian walking across using all frames.
+
+**Claude**: Added full pedestrian system:
+- Loads 6 `person_walk` sprites (frames 1-2 idle, 3-6 walking)
+- Clicking a button spawns a pedestrian at the corner's edge of the crosswalk, standing (frame 1)
+- When `isCrosswalkSafe` returns true, pedestrian walks across at 55px/s, cycling frames 3-6 at ~8fps
+- Removed when reaching the far side
+- `pedRequests` cleared per-crosswalk only when no pedestrians remain
+- Sprite flipped horizontally based on walking direction
+
+---
+
+## 41. Fix Pedestrian Sprite Direction
+
+**User**: When walking right to left the pedestrian is walking backwards.
+
+**Claude**: The sprite naturally faces right (not left as assumed). Inverted the `flipX` logic: now `flipX = !goingRight` for horizontal crosswalks and `flipX = !goingDown` for vertical, so the sprite faces the direction of travel.
+
+---
+
+## 42. Right Turn Cars Yield to Pedestrians
+
+**User**: Cars turning right need to check that they aren't running over pedestrians crossing the street.
+
+**Claude**: Added `RIGHT_TURN_CROSSWALK` mapping (each entrance's right-turn exits through a specific crosswalk) and `hasPedestrianOnCrosswalk()` function. Right-turn `canGo` logic now checks for walking pedestrians as highest priority — if someone is walking on the exit crosswalk, the car won't go regardless of light state.
+
+---
+
+## 43. Pedestrians Wait for Right-Turning Cars
+
+**User**: If a car is turning right when the pedestrian's safe crossing sign goes on, the pedestrian should wait for the car to clear.
+
+**Claude**: Added `CROSSWALK_RIGHT_TURN_SOURCE` (reverse mapping) and `hasRightTurnCarInCrosswalk()` which checks if any right-turn car from the relevant entrance has passed the light but not yet cleared past the crosswalk boundary. Pedestrians in "waiting" state now also check this before starting to walk.
+
+---
+
+## 44. Solid Lane Markers for Turn/Straight Boundaries
+
+**User**: Make half of the striped lane markers into solid lines — solid starts at the intersection and goes half the length toward the canvas edge.
+
+**Claude**: Identified turn/straight boundaries at dividers i=1, 3, 5, 7. For those dividers, the inner half (intersection to midpoint) is drawn solid and the outer half (midpoint to canvas edge) is drawn dashed. Non-boundary dividers (i=2, 6) remain fully dashed.
+
+---
+
+## 45. Double Solid Yellow Center Line
+
+**User**: Make the solid yellow line between directions a double solid yellow line.
+
+**Claude**: Replaced the single 4px yellow center line with two parallel 2px yellow lines offset by 3px on each side of center, matching standard double-yellow road markings.
