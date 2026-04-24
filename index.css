@@ -3,7 +3,7 @@ html {
 }
 
 body {
-    height: 97vh;
+    height: 96vh;
     width: 99vw;
     background-color: darkgrey;
 }
@@ -11,4 +11,8 @@ body {
 canvas {
     height: 100%;
     width: 100%;
+}
+
+.art-credits a {
+    text-decoration: none;
 }
