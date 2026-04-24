@@ -160,6 +160,22 @@ const RIGHT_TURN_YIELD = {
     east:  "north",
 };
 
+// Right-turn cars exit through the crosswalk on the perpendicular road.
+const RIGHT_TURN_CROSSWALK = {
+    south: "east",
+    north: "west",
+    west:  "south",
+    east:  "north",
+};
+
+// Reverse: which entrance's right-turn cars exit through each crosswalk.
+const CROSSWALK_RIGHT_TURN_SOURCE = {
+    east:  "south",
+    west:  "north",
+    south: "west",
+    north: "east",
+};
+
 // Unprotected left turns yield to oncoming straight traffic.
 const LEFT_TURN_YIELD = {
     south: "north",
@@ -211,7 +227,10 @@ function updatePedestrians(elapsed) {
         const ped = pedestrians[i];
 
         if (ped.state === "waiting") {
-            if (isCrosswalkSafe(ped.crosswalk)) ped.state = "walking";
+            if (isCrosswalkSafe(ped.crosswalk)
+                && !hasRightTurnCarInCrosswalk(ped.crosswalk)) {
+                ped.state = "walking";
+            }
             continue;
         }
 
@@ -311,6 +330,42 @@ function hasLeftTurnConflict(car) {
                 return true;
             }
         }
+    }
+    return false;
+}
+
+function hasPedestrianOnCrosswalk(crosswalk) {
+    for (const ped of pedestrians) {
+        if (ped.crosswalk !== crosswalk) continue;
+        if (ped.state !== "walking") continue;
+        return true;
+    }
+    return false;
+}
+
+function hasRightTurnCarInCrosswalk(crosswalk) {
+    const source = CROSSWALK_RIGHT_TURN_SOURCE[crosswalk];
+    for (const car of cars) {
+        if (car.entrance !== source) continue;
+        if (car.type !== "right") continue;
+        if (!car.pastLight) continue;
+
+        let cleared = false;
+        switch (crosswalk) {
+            case "east":
+                cleared = car.x > roadRight + cwDepth + carLen;
+                break;
+            case "west":
+                cleared = car.x < roadLeft - cwDepth - carLen;
+                break;
+            case "south":
+                cleared = car.y > roadBottom + cwDepth + carLen;
+                break;
+            case "north":
+                cleared = car.y < roadTop - cwDepth - carLen;
+                break;
+        }
+        if (!cleared) return true;
     }
     return false;
 }
@@ -532,7 +587,12 @@ function updateCars(elapsed) {
             // Determine whether this car can proceed
             let canGo;
             if (car.type === "right") {
-                if (isGreen(car.straightPhase)) {
+                const pedBlock = hasPedestrianOnCrosswalk(
+                    RIGHT_TURN_CROSSWALK[car.entrance]
+                );
+                if (pedBlock) {
+                    canGo = false;
+                } else if (isGreen(car.straightPhase)) {
                     canGo = true;
                 } else if (car.stoppedAtLine) {
                     canGo = !hasConflictingTraffic(car)
